@@ -1,4 +1,7 @@
-# N92's USB keyboard fuzzer
+# N92's modified Keyboard fuzzer
+tweaked for larger keyspace and start/stop functionality 
+
+# N92's original readme
 Turn your Flipper Zero into an USB keyboard fuzzer. Works with the [Xtreme Version](https://github.com/Flipper-XFW/Xtreme-Firmware). 
 For building instructions please refer the [official guide](https://github.com/Flipper-XFW/Xtreme-Firmware#build-it-yourself).
 
