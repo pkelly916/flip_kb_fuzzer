@@ -18,13 +18,6 @@
 // then (finally): better character map
 // finally: write to a log on the SD card
 
-// pjk
-/*
- * this code was modified from a regular hid keyboard app that displayed a full keyboard on the flipper
- * the entire x/y grid system was removed in place of a simpler 1-column scroll menu 
- * names such as UsbHidKeyboard and UsbHidKeyboardModel are unmodified and reference the old full keyboard view
- * much of the unused code has been removed
- */
 
 // flipper res
 #define FLIPPER_W 128
