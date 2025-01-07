@@ -2,67 +2,82 @@
 #include <furi.h>
 #include <furi_hal_usb_hid.h>
 #include <gui/elements.h>
-#include <gui/icon_i.h>
 
+// pjk
+/*
+ * code should randomly toggle ctrl/alt/winkey etc
+ * pick a random number between 1 and 5, generate random string, pick ctrl key at random, hold keys send then release 
+ * how to send f1-12 keys, escape, ins/prtscr, etc?
+ *
+ * flood/stop toggle button below push
+ *
+ * logs? where to store 
+ */
+
+// TODO next: enable flood functionality 
+// then (finally): better character map
+// finally: write to a log on the SD card
+
+// pjk
+/*
+ * this code was modified from a regular hid keyboard app that displayed a full keyboard on the flipper
+ * the entire x/y grid system was removed in place of a simpler 1-column scroll menu 
+ * names such as UsbHidKeyboard and UsbHidKeyboardModel are unmodified and reference the old full keyboard view
+ * much of the unused code has been removed
+ */
+
+// flipper res
+#define FLIPPER_W 128
+#define FLIPPER_H 64
+
+// button layout
+#define BUTTON_WIDTH_PERCENT 80 
+#define BUTTON_HEIGHT_PERCENT 20
+#define BUTTON_PADDING 1 
+#define ROW_COUNT 2
+#define LOWER_LIMIT_STRING_LENGTH 1
+#define UPPER_LIMIT_STRING_LENGTH 20
 
 struct UsbHidKeyboard {
     View* view;
 };
 
 typedef struct {
-    bool shift;
-    bool alt;
-    bool ctrl;
-    bool gui;
-    uint8_t x;
     uint8_t y;
-    uint8_t last_key_code;
-    uint16_t modifier_code;
     bool ok_pressed;
-    bool back_pressed;
     bool connected;
-    char key_string[5];
+    char button_string[5];
 } UsbHidKeyboardModel;
 
 typedef struct {
     uint8_t width;
-    char* key;
-    const Icon* icon;
-    char* shift_key;
-    uint8_t value;
-} UsbHidKeyboardKey;
+    char* label;
+    char* alt_label;
+    uint8_t enabled;
+} UsbHidKeyFuzzerButton;
 
-typedef struct {
-    int8_t x;
-    int8_t y;
-} UsbHidKeyboardPoint;
-
+// TODO this is unnecessary, remove when random range is implemented
 static const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()-_=+[]{};:\'\",.<>/?";
 
-// 4 BY 12
-#define MARGIN_TOP 0
-#define MARGIN_LEFT 4
-#define KEY_WIDTH 9
-#define KEY_HEIGHT 12
-#define KEY_PADDING 1
-#define ROW_COUNT 2
-#define COLUMN_COUNT 12
-#define LOWER_LIMIT_STRING_LENGTH 1
-#define UPPER_LIMIT_STRING_LENGTH 20
+const int BUTTON_WIDTH = BUTTON_WIDTH_PERCENT * FLIPPER_W / 100;
+const int BUTTON_HEIGHT = BUTTON_HEIGHT_PERCENT * FLIPPER_H / 100;
 
+const int MARGIN_LEFT = (FLIPPER_W - BUTTON_WIDTH) / 2;
 
-// 0 width items are not drawn, but there value is used
-const UsbHidKeyboardKey usb_hid_keyboard_keyset[ROW_COUNT][COLUMN_COUNT] = {
-    {
-        {.width = 12, .icon = NULL, .key = "Pump!", .shift_key = "", .value = 0},
-    },
-   
+// definition of buttons 
+const UsbHidKeyFuzzerButton usb_hid_key_fuzzer_buttons[ROW_COUNT] = {
+    {.width = BUTTON_WIDTH, .label = "Pump!", .alt_label = "", .enabled = 0},
+    {.width = BUTTON_WIDTH, .label = "Flood", .alt_label = "Stop", .enabled = 0},
 };
 
+/* send keystroke */
+/* param is send string */
 bool send_string(const char* param) {
     uint32_t i = 0;
     while (param[i] != '\0') {
         if (param[i] != '\n') {
+            // TODO this just gets the hex for the ascii
+            // just have it randomly generate the hex and skip the middleman
             uint16_t keycode = HID_ASCII_TO_KEY(param[i]);
             if (keycode != HID_KEYBOARD_NONE) {
                 furi_hal_hid_kb_press(keycode);
@@ -74,6 +89,7 @@ bool send_string(const char* param) {
     return true;
 }
 
+/* name is as does, populates str parameter and returns it */
 static char* create_rand_string(char* str, size_t size)
 {
     if (size) {
@@ -87,137 +103,141 @@ static char* create_rand_string(char* str, size_t size)
     return str;
 }
 
-static void usb_hid_keyboard_to_upper(char* str) {
-    while(*str) {
-        *str = toupper((unsigned char)*str);
-        str++;
-    }
-}
-
-static void usb_hid_keyboard_draw_key(
+/* button ui */
+static void usb_hid_keyboard_draw_button(
     Canvas* canvas,
     UsbHidKeyboardModel* model,
-    uint8_t x,
     uint8_t y,
-    UsbHidKeyboardKey key,
-    bool selected) {
-    if(!key.width) return;
-
+    UsbHidKeyFuzzerButton button,
+    bool selected) 
+{
     canvas_set_color(canvas, ColorBlack);
-    uint8_t keyWidth = KEY_WIDTH * key.width + KEY_PADDING * (key.width - 1);
     if(selected) {
         // Draw a filled box
         elements_slightly_rounded_box(
             canvas,
-            MARGIN_LEFT + x * (KEY_WIDTH + KEY_PADDING),
-            MARGIN_TOP + y * (KEY_HEIGHT + KEY_PADDING),
-            keyWidth,
-            KEY_HEIGHT);
+            MARGIN_LEFT, 
+            y * (BUTTON_HEIGHT + BUTTON_PADDING),
+            BUTTON_WIDTH,
+            BUTTON_HEIGHT);
         canvas_set_color(canvas, ColorWhite);
     } else {
         // Draw a framed box
         elements_slightly_rounded_frame(
             canvas,
-            MARGIN_LEFT + x * (KEY_WIDTH + KEY_PADDING),
-            MARGIN_TOP + y * (KEY_HEIGHT + KEY_PADDING),
-            keyWidth,
-            KEY_HEIGHT);
+            MARGIN_LEFT, 
+            y * (BUTTON_HEIGHT + BUTTON_PADDING),
+            BUTTON_WIDTH,
+            BUTTON_HEIGHT);
     }
-    if(key.icon != NULL) {
-        // Draw the icon centered on the button
-        canvas_draw_icon(
-            canvas,
-            MARGIN_LEFT + x * (KEY_WIDTH + KEY_PADDING) + keyWidth / 2 - key.icon->width / 2,
-            MARGIN_TOP + y * (KEY_HEIGHT + KEY_PADDING) + KEY_HEIGHT / 2 - key.icon->height / 2,
-            key.icon);
-    } else {
-        // If shift is toggled use the shift key when available
-        strcpy(model->key_string, (model->shift && key.shift_key != 0) ? key.shift_key : key.key);
-        // Upper case if ctrl or alt was toggled true
-        if((model->ctrl && key.value == HID_KEYBOARD_L_CTRL) ||
-           (model->alt && key.value == HID_KEYBOARD_L_ALT) ||
-           (model->gui && key.value == HID_KEYBOARD_L_GUI)) {
-            usb_hid_keyboard_to_upper(model->key_string);
-        }
-        canvas_draw_str_aligned(
-            canvas,
-            MARGIN_LEFT + x * (KEY_WIDTH + KEY_PADDING) + keyWidth / 2 + 1,
-            MARGIN_TOP + y * (KEY_HEIGHT + KEY_PADDING) + KEY_HEIGHT / 2,
-            AlignCenter,
-            AlignCenter,
-            model->key_string);
-    }
+    // change to alt_label for flood
+    // TODO just change the value to 1 elsewhere 
+    strcpy(model->button_string, (button.enabled != 0) ? button.alt_label : button.label);
+
+    canvas_draw_str_aligned(
+        canvas,
+        MARGIN_LEFT + BUTTON_WIDTH / 2 + 1,
+        y * (BUTTON_HEIGHT + BUTTON_PADDING) + BUTTON_HEIGHT / 2,
+        AlignCenter,
+        AlignCenter,
+        model->button_string);
 }
 
+/* button hover ui */
 static void usb_hid_keyboard_draw_callback(Canvas* canvas, void* context) {
     furi_assert(context);
     UsbHidKeyboardModel* model = context;
 
     canvas_set_font(canvas, FontKeyboard);
-    // Start shifting the all keys up if on the next row (Scrolling)
+    // Start shifting all buttons up if on the next row (Scrolling)
+    // note: scrolling functionality was preserved but is currently unused (untested)
     uint8_t initY = model->y - 4 > 0 ? model->y - 4 : 0;
     for(uint8_t y = initY; y < ROW_COUNT; y++) {
-        const UsbHidKeyboardKey* keyboardKeyRow = usb_hid_keyboard_keyset[y];
-        uint8_t x = 0;
-        for(uint8_t i = 0; i < COLUMN_COUNT; i++) {
-            UsbHidKeyboardKey key = keyboardKeyRow[i];
-            // Select when the button is hovered
-            // Select if the button is hovered within its width
-            // Select if back is clicked and its the backspace key
-            // Deselect when the button clicked or not hovered
-            bool keySelected = (x <= model->x && model->x < (x + key.width)) && y == model->y;
-            // Revert selection for function keys
-            keySelected = y == ROW_COUNT - 1 ? !keySelected : keySelected;
-            bool backSelected = model->back_pressed && key.value == HID_KEYBOARD_DELETE;
-            usb_hid_keyboard_draw_key(
-                canvas,
-                model,
-                x,
-                y - initY,
-                key,
-                (!model->ok_pressed && keySelected) || backSelected);
-            x += key.width;
-        }
+        const UsbHidKeyFuzzerButton currentButton = usb_hid_key_fuzzer_buttons[y];
+        // Select when the button is hovered
+        // Deselect when the button clicked or not hovered
+        bool buttonSelected = y == model->y;
+        usb_hid_keyboard_draw_button(
+            canvas,
+            model,
+            y - initY,
+            currentButton,
+            (!model->ok_pressed && buttonSelected)
+        );
     }
 }
 
-static void usb_hid_keyboard_process(UsbHidKeyboard* usb_hid_keyboard, InputEvent* event) {
+/* used for filling in currently selected button */
+static void usb_hid_key_fuzzer_get_select_button(UsbHidKeyboardModel* model, int rowDelta) {
+    // wrap around at top
+    if(model->y == 0 && rowDelta < 0) 
+      model->y = ROW_COUNT - 1;
+    // wrap around at bottom
+    else if (model->y + rowDelta > ROW_COUNT - 1)
+      model->y = 0;
+    else
+      model->y += rowDelta;
+}
+
+/* main rand string generator and sender */
+static void usb_hid_key_fuzzer_process(UsbHidKeyboard* usb_hid_keyboard, InputEvent* event) {
     with_view_model(
         usb_hid_keyboard->view,
         UsbHidKeyboardModel * model,
-        {
-            int random_length = (rand() % (UPPER_LIMIT_STRING_LENGTH - LOWER_LIMIT_STRING_LENGTH + 1)) + LOWER_LIMIT_STRING_LENGTH;
-            char* ptr_rand_string = malloc(random_length);
-            send_string(create_rand_string(ptr_rand_string, random_length));
-            if (ptr_rand_string != NULL) {
-                free(ptr_rand_string);
-            }
-            
-            furi_hal_hid_kb_press(HID_KEYBOARD_RETURN);
-            furi_hal_hid_kb_release_all();
-            
-
-            if(event->key == InputKeyBack) {
-                // If back is pressed for a short time, backspace
+        { // core of key press processing
+            // run selected button action
+            if(event->key == InputKeyOk) {
                 if(event->type == InputTypePress) {
-                    model->back_pressed = true; 
-                }else if(event->type == InputTypeRelease) {
-                    model->back_pressed = false;
+                    model->ok_pressed = true;
+                } 
+                else if(event->type == InputTypeLong || event->type == InputTypeShort) {
+
+                    // currently both buttons do the same original function
+                    // TODO: get selected button and run its action
+                    int random_length = (rand() % (UPPER_LIMIT_STRING_LENGTH - LOWER_LIMIT_STRING_LENGTH + 1)) + LOWER_LIMIT_STRING_LENGTH;
+                    char* ptr_rand_string = malloc(random_length);
+                    // send random string as hid keyboard
+                    send_string(create_rand_string(ptr_rand_string, random_length));
+                    // this feels like bad code
+                    if (ptr_rand_string != NULL) {
+                        free(ptr_rand_string);
+                    }
+
+                    furi_hal_hid_kb_press(HID_KEYBOARD_RETURN);
+                    furi_hal_hid_kb_release_all();
+
+                }
+                else if(event->type == InputTypeRelease) {
+                    // release happens after short and long presses
+                    model->ok_pressed = false;
                 }
             }
+            // cycle the selected keys
+            else if(event->type == InputTypePress || event->type == InputTypeRepeat) {
+                if(event->key == InputKeyUp) {
+                    usb_hid_key_fuzzer_get_select_button(model, -1);
+                } else if (event->key == InputKeyDown) {
+                    usb_hid_key_fuzzer_get_select_button(model, 1);
+                } 
+            }
+
         },
-        true);
+        true
+   );
 }
 
+/* button get pressed, this get called */
 static bool usb_hid_keyboard_input_callback(InputEvent* event, void* context) {
     furi_assert(context);
     UsbHidKeyboard* usb_hid_keyboard = context;
     bool consumed = false;
 
-    if(event->type == InputTypeLong && event->key == InputKeyBack) {
+    // quit app
+    if(event->key == InputKeyBack) {
         furi_hal_hid_kb_release_all();
+    // process flipper keypress
     } else {
-        usb_hid_keyboard_process(usb_hid_keyboard, event);
+        usb_hid_key_fuzzer_process(usb_hid_keyboard, event);
         consumed = true;
     }
 
