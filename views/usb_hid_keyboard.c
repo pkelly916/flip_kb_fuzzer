@@ -42,14 +42,20 @@ typedef struct {
     char button_string[5];
 } UsbHidKeyboardModel;
 
+enum Buttons {
+    PUMP,
+    FLOOD
+};
+
 typedef struct {
-    uint8_t width;
+    enum Buttons button;
     char* label;
     char* alt_label;
     uint8_t enabled;
+    uint8_t width;
 } UsbHidKeyFuzzerButton;
 
-// TODO this is unnecessary, remove when random range is implemented
+// TODO this might be unnecessary, maybe remove when random range is implemented
 static const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()-_=+[]{};:\'\",.<>/?";
 
 const int BUTTON_WIDTH = BUTTON_WIDTH_PERCENT * FLIPPER_W / 100;
@@ -59,8 +65,8 @@ const int MARGIN_LEFT = (FLIPPER_W - BUTTON_WIDTH) / 2;
 
 // definition of buttons 
 const UsbHidKeyFuzzerButton usb_hid_key_fuzzer_buttons[ROW_COUNT] = {
-    {.width = BUTTON_WIDTH, .label = "Pump!", .alt_label = "", .enabled = 0},
-    {.width = BUTTON_WIDTH, .label = "Flood", .alt_label = "Stop", .enabled = 0},
+    {.button = PUMP, .label = "Pump!", .alt_label = "", .enabled = 0, .width = BUTTON_WIDTH},
+    {.button = FLOOD, .label = "Flood", .alt_label = "Stop", .enabled = 0, .width = BUTTON_WIDTH},
 };
 
 /* send keystroke */
@@ -185,19 +191,31 @@ static void usb_hid_key_fuzzer_process(UsbHidKeyboard* usb_hid_keyboard, InputEv
                 } 
                 else if(event->type == InputTypeLong || event->type == InputTypeShort) {
 
-                    // currently both buttons do the same original function
-                    // TODO: get selected button and run its action
-                    int random_length = (rand() % (UPPER_LIMIT_STRING_LENGTH - LOWER_LIMIT_STRING_LENGTH + 1)) + LOWER_LIMIT_STRING_LENGTH;
-                    char* ptr_rand_string = malloc(random_length);
-                    // send random string as hid keyboard
-                    send_string(create_rand_string(ptr_rand_string, random_length));
-                    // this feels like bad code
-                    if (ptr_rand_string != NULL) {
-                        free(ptr_rand_string);
-                    }
+                    // get selected button and run its action
+                    enum Buttons selectedButton = usb_hid_key_fuzzer_buttons[model->y].button;
 
-                    furi_hal_hid_kb_press(HID_KEYBOARD_RETURN);
-                    furi_hal_hid_kb_release_all();
+                    switch (selectedButton) {
+                    case PUMP:
+                        int random_length = (rand() % (UPPER_LIMIT_STRING_LENGTH - LOWER_LIMIT_STRING_LENGTH + 1)) + LOWER_LIMIT_STRING_LENGTH;
+                        char* ptr_rand_string = malloc(random_length);
+
+                        if (ptr_rand_string != NULL) {
+                            // send random string as hid keyboard
+                            send_string(create_rand_string(ptr_rand_string, random_length));
+                            free(ptr_rand_string);
+                        }
+                        goto default_label;
+               
+                     case FLOOD:
+                        // TODO likely need threading
+                        send_string("FLOOD BUTTON");
+                        goto default_label;
+
+                     default:
+                        default_label:
+                        furi_hal_hid_kb_press(HID_KEYBOARD_RETURN);
+                        furi_hal_hid_kb_release_all();
+                    }
 
                 }
                 else if(event->type == InputTypeRelease) {
