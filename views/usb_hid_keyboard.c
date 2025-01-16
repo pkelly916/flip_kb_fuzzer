@@ -14,8 +14,7 @@
  * logs? where to store 
  */
 
-// TODO next: enable flood functionality 
-// then (finally): better character map
+// TODO next (finally): better character map and random modifier key toggle
 // finally: write to a log on the SD card
 
 
@@ -64,10 +63,15 @@ const int BUTTON_HEIGHT = BUTTON_HEIGHT_PERCENT * FLIPPER_H / 100;
 const int MARGIN_LEFT = (FLIPPER_W - BUTTON_WIDTH) / 2;
 
 // definition of buttons 
-const UsbHidKeyFuzzerButton usb_hid_key_fuzzer_buttons[ROW_COUNT] = {
+UsbHidKeyFuzzerButton usb_hid_key_fuzzer_buttons[ROW_COUNT] = {
     {.button = PUMP, .label = "Pump!", .alt_label = "", .enabled = 0, .width = BUTTON_WIDTH},
     {.button = FLOOD, .label = "Flood", .alt_label = "Stop", .enabled = 0, .width = BUTTON_WIDTH},
 };
+
+
+// global thread variables
+FuriThread* kf_flood_thread;
+uint8_t RUN_THREAD = 0;
 
 /* send keystroke */
 /* param is send string */
@@ -129,8 +133,8 @@ static void usb_hid_keyboard_draw_button(
             BUTTON_WIDTH,
             BUTTON_HEIGHT);
     }
-    // change to alt_label for flood
-    // TODO just change the value to 1 elsewhere 
+
+    // change to alt_label when enabled 
     strcpy(model->button_string, (button.enabled != 0) ? button.alt_label : button.label);
 
     canvas_draw_str_aligned(
@@ -178,6 +182,37 @@ static void usb_hid_key_fuzzer_get_select_button(UsbHidKeyboardModel* model, int
       model->y += rowDelta;
 }
 
+static void send_rand_string() {
+    int random_length = (rand() % (UPPER_LIMIT_STRING_LENGTH - LOWER_LIMIT_STRING_LENGTH + 1)) + LOWER_LIMIT_STRING_LENGTH;
+    char* ptr_rand_string = malloc(random_length);
+
+    if (ptr_rand_string != NULL) {
+        // send random string as hid keyboard
+        send_string(create_rand_string(ptr_rand_string, random_length));
+        free(ptr_rand_string);
+    }
+    furi_hal_hid_kb_release_all();
+}
+
+/* main flood thread function */
+static int32_t fuzzer_flood_worker(void *context) {
+    UNUSED(context);
+
+    while (RUN_THREAD) {
+
+        // usb_hid_key_fuzzer_buttons FLOOD button idx = 1
+        if (usb_hid_key_fuzzer_buttons[1].enabled) {
+            send_rand_string();
+            furi_delay_ms(100); // 10 a second
+        }
+        else {
+            furi_delay_ms(500);
+        }
+    }
+
+    return 0;
+}
+
 /* main rand string generator and sender */
 static void usb_hid_key_fuzzer_process(UsbHidKeyboard* usb_hid_keyboard, InputEvent* event) {
     with_view_model(
@@ -196,19 +231,18 @@ static void usb_hid_key_fuzzer_process(UsbHidKeyboard* usb_hid_keyboard, InputEv
 
                     switch (selectedButton) {
                     case PUMP:
-                        int random_length = (rand() % (UPPER_LIMIT_STRING_LENGTH - LOWER_LIMIT_STRING_LENGTH + 1)) + LOWER_LIMIT_STRING_LENGTH;
-                        char* ptr_rand_string = malloc(random_length);
-
-                        if (ptr_rand_string != NULL) {
-                            // send random string as hid keyboard
-                            send_string(create_rand_string(ptr_rand_string, random_length));
-                            free(ptr_rand_string);
-                        }
+                        usb_hid_key_fuzzer_buttons[1].enabled = 0; // stop flooding if its running
+                        send_rand_string();
                         goto default_label;
                
                      case FLOOD:
-                        // TODO likely need threading
-                        send_string("FLOOD BUTTON");
+                        FuriThreadState kf_flood_thread_state = furi_thread_get_state(kf_flood_thread);
+                        if (kf_flood_thread_state == FuriThreadStateStopped) {
+                           RUN_THREAD = 1;
+                           furi_thread_start(kf_flood_thread);
+                        }
+
+                        usb_hid_key_fuzzer_buttons[model->y].enabled = !usb_hid_key_fuzzer_buttons[model->y].enabled;
                         goto default_label;
 
                      default:
@@ -266,10 +300,21 @@ UsbHidKeyboard* usb_hid_keyboard_alloc() {
 
     with_view_model(usb_hid_keyboard->view, UsbHidKeyboardModel * model, { model->connected = true; }, true);
 
+    kf_flood_thread = furi_thread_alloc();
+    furi_thread_set_stack_size(kf_flood_thread, 1024);
+    furi_thread_set_callback(kf_flood_thread, fuzzer_flood_worker);
+
     return usb_hid_keyboard;
 }
 
 void usb_hid_keyboard_free(UsbHidKeyboard* usb_hid_keyboard) {
+    FuriThreadState kf_flood_thread_state = furi_thread_get_state(kf_flood_thread);
+    if (kf_flood_thread_state != FuriThreadStateStopped) {
+        RUN_THREAD = 0;
+        furi_thread_join(kf_flood_thread);
+    }
+    furi_thread_free(kf_flood_thread);
+
     furi_assert(usb_hid_keyboard);
     view_free(usb_hid_keyboard->view);
     free(usb_hid_keyboard);
