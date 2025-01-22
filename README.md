@@ -1,6 +1,16 @@
 # Improved Flipper Keyboard fuzzer
 N92's keyboard fuzzer has been modified to include a larger keyspace and start/stop functionality through a new Flood button. Key modifiers are now applied to strings randomly so that CTRL, ALT, SHIFT, ESC, codes are now included in fuzzing. 
 
+# To Do List
+
+Modifications
+
+- [X] refactor for later modifications
+- [X] add second button 
+- [X] implement start/stop functionality on flood button
+- [ ] adjust keyboard keyspace and add modifiers (CTRL, ALT, ESC, etc)
+- [ ] write to a log on SD card
+
 # N92's original readme
 Turn your Flipper Zero into a USB keyboard fuzzer. Works with the [Xtreme Version](https://github.com/Flipper-XFW/Xtreme-Firmware). 
 For building instructions please refer to the [official guide](https://github.com/Flipper-XFW/Xtreme-Firmware#build-it-yourself).
