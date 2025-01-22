@@ -3,7 +3,7 @@ N92's keyboard fuzzer has been modified to include a larger keyspace and start/s
 
 # To Do List
 
-Modifications
+This project is a work in progress. The following list tracks the current implementation of desired features. 
 
 - [X] refactor for later modifications
 - [X] add second button 
