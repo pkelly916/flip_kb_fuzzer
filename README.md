@@ -10,6 +10,9 @@ This project is a work in progress. The following list tracks the current implem
 - [X] implement start/stop functionality on flood button
 - [ ] adjust keyboard keyspace and add modifiers (CTRL, ALT, ESC, etc)
 - [ ] write to a log on SD card
+- [ ] include build instructions in readme
+- [ ] add third "run all" button that tries every single key in a row, once
+    - [ ] will need "finished" functionality
 
 # N92's original readme
 Turn your Flipper Zero into a USB keyboard fuzzer. Works with the [Xtreme Version](https://github.com/Flipper-XFW/Xtreme-Firmware). 

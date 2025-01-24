@@ -1,21 +1,14 @@
 #include "usb_hid_keyboard.h"
+#include "usb_hid_keyboard_map.h"
 #include <furi.h>
-#include <furi_hal_usb_hid.h>
 #include <gui/elements.h>
 
 // pjk
-/*
- * code should randomly toggle ctrl/alt/winkey etc
- * pick a random number between 1 and 5, generate random string, pick ctrl key at random, hold keys send then release 
- * how to send f1-12 keys, escape, ins/prtscr, etc?
- *
- * flood/stop toggle button below push
- *
- * logs? where to store 
+/* TODO
+ * write to a log on the SD card
+ * bonus: add third button to just loop over every possible key + modifier combo, then finish
  */
 
-// TODO next (finally): better character map and random modifier key toggle
-// finally: write to a log on the SD card
 
 
 // flipper res
@@ -54,9 +47,6 @@ typedef struct {
     uint8_t width;
 } UsbHidKeyFuzzerButton;
 
-// TODO this might be unnecessary, maybe remove when random range is implemented
-static const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()-_=+[]{};:\'\",.<>/?";
-
 const int BUTTON_WIDTH = BUTTON_WIDTH_PERCENT * FLIPPER_W / 100;
 const int BUTTON_HEIGHT = BUTTON_HEIGHT_PERCENT * FLIPPER_H / 100;
 
@@ -71,35 +61,44 @@ UsbHidKeyFuzzerButton usb_hid_key_fuzzer_buttons[ROW_COUNT] = {
 
 // global thread variables
 FuriThread* kf_flood_thread;
-uint8_t RUN_THREAD = 0;
+uint8_t RUN_THREAD = 0; // TODO: use thread flags
 
 /* send keystroke */
 /* param is send string */
-bool send_string(const char* param) {
+bool send_string(const uint16_t* param) {
     uint32_t i = 0;
     while (param[i] != '\0') {
-        if (param[i] != '\n') {
-            // TODO this just gets the hex for the ascii
-            // just have it randomly generate the hex and skip the middleman
-            uint16_t keycode = HID_ASCII_TO_KEY(param[i]);
-            if (keycode != HID_KEYBOARD_NONE) {
-                furi_hal_hid_kb_press(keycode);
-                furi_hal_hid_kb_release(keycode);
-            }
+        uint16_t keycode = param[i];
+        if (keycode != HID_KEYBOARD_NONE) {
+            furi_hal_hid_kb_press(keycode);
+            furi_hal_hid_kb_release(keycode);
         }
         i++;
     }
     return true;
 }
 
+// randomly selects between 0 and 4 modifiers out of 
+// HidKeyboardMods enum (left only)
+// builds and returns modifier mask
+uint16_t get_rand_modifier() {
+    // there is a 1/8 chance there will not be a modifier
+    uint16_t modifier = (rand() % 8) << 8;
+    // there is now a 50% chance there will not be a modifier
+    // note: extra call to rand
+    return modifier * (rand() % 2);
+}
+
 /* name is as does, populates str parameter and returns it */
-static char* create_rand_string(char* str, size_t size)
+static uint16_t* create_rand_string(uint16_t* str, size_t size)
 {
     if (size) {
         --size;
         for (size_t n = 0; n < size; n++) {
-            int key = rand() % (int)(sizeof charset - 1);
-            str[n] = charset[key];
+            uint16_t modifier = get_rand_modifier();
+            int key = rand() % (int)(sizeof hid_full_asciimap - 1);
+            str[n] = hid_full_asciimap[key] | modifier;
+            
         }
         str[size] = '\0';
     }
@@ -184,7 +183,7 @@ static void usb_hid_key_fuzzer_get_select_button(UsbHidKeyboardModel* model, int
 
 static void send_rand_string() {
     int random_length = (rand() % (UPPER_LIMIT_STRING_LENGTH - LOWER_LIMIT_STRING_LENGTH + 1)) + LOWER_LIMIT_STRING_LENGTH;
-    char* ptr_rand_string = malloc(random_length);
+    uint16_t* ptr_rand_string = malloc(random_length * (sizeof(uint16_t)));
 
     if (ptr_rand_string != NULL) {
         // send random string as hid keyboard
