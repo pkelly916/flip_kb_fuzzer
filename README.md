@@ -8,7 +8,7 @@ This project is a work in progress. The following list tracks the current implem
 - [X] refactor for later modifications
 - [X] add second button 
 - [X] implement start/stop functionality on flood button
-- [ ] adjust keyboard keyspace and add modifiers (CTRL, ALT, ESC, etc)
+- [X] adjust keyboard keyspace and add modifiers (CTRL, ALT, ESC, etc)
 - [ ] write to a log on SD card
 - [ ] include build instructions in readme
 - [ ] add third "run all" button that tries every single key in a row, once
